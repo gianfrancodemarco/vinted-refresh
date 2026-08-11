@@ -130,7 +130,7 @@ async function waitForCategoryInference(page) {
 async function fillFormFields(page, fields, onProgress) {
   if (fields.category) {
     onProgress(`Setting category: ${fields.category}`);
-    await fillCategoryField(page, fields.category);
+    await fillCategoryField(page, fields.category, fields.categoryPath);
   } else {
     const currentCategory = await page.locator('#category').inputValue().catch(() => '');
     if (!currentCategory.trim()) {
@@ -139,6 +139,18 @@ async function fillFormFields(page, fields, onProgress) {
     }
   }
   await pause(page, 1200, 2000);
+
+  if (fields.videoGamePlatform) {
+    onProgress(`Setting platform: ${fields.videoGamePlatform}`);
+    await pickDropdownOption(page, '#video_game_platform', '.web_ui__Cell__cell', fields.videoGamePlatform);
+    await pause(page, 900, 1600);
+  }
+
+  if (fields.videoGameRating) {
+    onProgress(`Setting rating: ${fields.videoGameRating}`);
+    await pickDropdownOption(page, '#video_game_ratings', '.web_ui__Cell__cell', fields.videoGameRating);
+    await pause(page, 900, 1600);
+  }
 
   if (fields.condition) {
     onProgress(`Setting condition: ${fields.condition}`);
@@ -341,7 +353,7 @@ async function pickDropdownOption(page, inputSelector, cellSelector, target, opt
   return true;
 }
 
-async function fillCategoryField(page, category) {
+async function fillCategoryField(page, category, categoryPath = '') {
   const categoryInput = page.locator('#category').first();
   await categoryInput.click();
   await pause(page, 400, 800);
@@ -355,11 +367,20 @@ async function fillCategoryField(page, category) {
     useSearch = false;
   }
 
+  const searchTerm = categoryPath
+    ? categoryPath
+        .split(/>|›/)
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .slice(-2)
+        .join(' ')
+    : String(category);
+
   const targetInput = useSearch ? searchInput : categoryInput;
   await targetInput.click();
   await page.keyboard.press(selectAllKey());
   await pause(page, 80, 160);
-  await page.keyboard.insertText(String(category));
+  await page.keyboard.insertText(searchTerm);
   await pause(page, 1600, 2400);
 
   const suggestions = page.locator('[id^="catalog-suggestion-"], [id$="-result"].web_ui__Cell__cell');
@@ -372,13 +393,31 @@ async function fillCategoryField(page, category) {
 
   const count = await suggestions.count();
   const target = normText(category);
+  const pathSegments = categoryPath
+    ? categoryPath
+        .split(/>|›/)
+        .map((part) => normText(part))
+        .filter(Boolean)
+    : [];
+
   let pickIndex = 0;
+  let bestScore = -1;
   for (let i = 0; i < count; i++) {
     const text = normText(await suggestions.nth(i).textContent());
     const lastSegment = text.split(/[›>/]/).pop()?.trim() || text;
-    if (text.includes(target) || target.includes(lastSegment) || lastSegment.includes(target)) {
+    let score = 0;
+
+    if (pathSegments.length) {
+      for (const segment of pathSegments) {
+        if (text.includes(segment)) score += 10;
+      }
+    } else if (text.includes(target) || target.includes(lastSegment) || lastSegment.includes(target)) {
+      score = 50;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
       pickIndex = i;
-      break;
     }
   }
 

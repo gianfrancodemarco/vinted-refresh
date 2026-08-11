@@ -18,6 +18,27 @@ export async function extractItemFields(page, itemUrl) {
     throw new Error(`Item not found: ${itemUrl}`);
   }
 
+  const categoryPath = await page.evaluate(() => {
+    const links = Array.from(
+      document.querySelectorAll(
+        '[data-testid*="breadcrumb"] a, nav[aria-label*="breadcrumb" i] a, .web_ui__Breadcrumbs__breadcrumb a, .web_ui__Breadcrumbs__ a'
+      )
+    )
+      .map((link) => link.textContent?.trim())
+      .filter(Boolean);
+
+    if (links.length) return links.join(' > ');
+
+    const crumbs = Array.from(
+      document.querySelectorAll('[data-testid*="breadcrumb"] *, .web_ui__Breadcrumbs__ *')
+    )
+      .map((el) => el.textContent?.trim())
+      .filter((text) => text && text.length < 40 && !/catalogo|vinted|home|articoli/i.test(text));
+
+    const unique = [...new Set(crumbs)];
+    return unique.length >= 2 ? unique.join(' > ') : '';
+  });
+
   const editBtn = page.locator(EDIT_SELECTORS.join(', ')).first();
   await editBtn.waitFor({ state: 'attached', timeout: 15000 });
   await editBtn.scrollIntoViewIfNeeded().catch(() => {});
@@ -58,6 +79,8 @@ export async function extractItemFields(page, itemUrl) {
       color: val('#color'),
       condition: val('#condition'),
       category: val('#category'),
+      videoGamePlatform: val('#video_game_platform'),
+      videoGameRating: val('#video_game_ratings'),
       price,
       photoUrls,
       packageSizeId,
@@ -68,6 +91,7 @@ export async function extractItemFields(page, itemUrl) {
     throw new Error('Could not read listing fields. Are you the owner of this item?');
   }
 
+  fields.categoryPath = categoryPath;
   fields.conditionTestId = await extractConditionTestId(page, fields.condition);
 
   return fields;

@@ -21,7 +21,10 @@ export async function refreshItem(rawUrl, options = {}) {
       console.log(`  title: ${fields.title}`);
       console.log(`  price: ${fields.price}`);
       console.log(`  category: ${fields.category || '(empty)'}`);
+      if (fields.categoryPath) console.log(`  category path: ${fields.categoryPath}`);
       console.log(`  brand: ${fields.brand || '(empty)'}`);
+      console.log(`  platform: ${fields.videoGamePlatform || '(empty)'}`);
+      console.log(`  rating: ${fields.videoGameRating || '(empty)'}`);
       console.log(`  size: ${fields.size || '(empty)'}`);
       console.log(`  color: ${fields.color || '(empty)'}`);
       console.log(`  condition: ${fields.condition || '(empty)'}`);
