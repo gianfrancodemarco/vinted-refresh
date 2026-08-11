@@ -1,0 +1,5 @@
+node_modules/
+.vinted-refresh/
+session-profile/
+*.log
+.DS_Store
