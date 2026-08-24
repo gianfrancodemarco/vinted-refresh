@@ -25,6 +25,9 @@ export async function refreshItem(rawUrl, options = {}) {
       console.log(`  brand: ${fields.brand || '(empty)'}`);
       console.log(`  platform: ${fields.videoGamePlatform || '(empty)'}`);
       console.log(`  rating: ${fields.videoGameRating || '(empty)'}`);
+      console.log(`  isbn: ${fields.isbn || '(empty)'}`);
+      if (fields.bookTitle) console.log(`  book title: ${fields.bookTitle}`);
+      if (fields.bookLanguage) console.log(`  book language: ${fields.bookLanguage}`);
       console.log(`  size: ${fields.size || '(empty)'}`);
       console.log(`  color: ${fields.color || '(empty)'}`);
       console.log(`  condition: ${fields.condition || '(empty)'}`);

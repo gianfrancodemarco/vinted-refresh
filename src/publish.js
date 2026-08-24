@@ -152,6 +152,8 @@ async function fillFormFields(page, fields, onProgress) {
     await pause(page, 900, 1600);
   }
 
+  await fillBookFields(page, fields, onProgress);
+
   if (fields.condition) {
     onProgress(`Setting condition: ${fields.condition}`);
     await fillConditionField(page, fields.condition, fields.conditionTestId);
@@ -351,6 +353,44 @@ async function pickDropdownOption(page, inputSelector, cellSelector, target, opt
     await pause(page, 150, 320);
   }
   return true;
+}
+
+async function fillBookFields(page, fields, onProgress) {
+  if (!fields.isbn) return;
+
+  const isbnInput = page.locator('#isbn').first();
+  if (!(await isbnInput.count())) return;
+
+  onProgress(`Setting ISBN: ${fields.isbn}`);
+  await reactFill(page, '#isbn', normalizeIsbn(fields.isbn));
+  await pause(page, 2000, 3500);
+
+  try {
+    await page.waitForFunction(
+      () => {
+        const title = document.querySelector('#book_title');
+        return title instanceof HTMLInputElement && title.value.trim().length > 0;
+      },
+      { timeout: 8000 }
+    );
+  } catch {
+    if (fields.bookTitle) {
+      onProgress(`Setting book title: ${fields.bookTitle}`);
+      await reactFill(page, '#book_title', fields.bookTitle);
+      await pause(page, 900, 1600);
+    }
+  }
+
+  const currentLanguage = await readFieldValue(page, '#language_book');
+  if (fields.bookLanguage && normText(currentLanguage) !== normText(fields.bookLanguage)) {
+    onProgress(`Setting book language: ${fields.bookLanguage}`);
+    await pickDropdownOption(page, '#language_book', '.web_ui__Cell__cell', fields.bookLanguage);
+    await pause(page, 900, 1600);
+  }
+}
+
+function normalizeIsbn(value) {
+  return String(value).replace(/[^\dXx]/g, '').toUpperCase();
 }
 
 async function fillCategoryField(page, category, categoryPath = '') {

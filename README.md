@@ -27,6 +27,14 @@ npm link
 
 ## Quick start
 
+Run without arguments to open the interactive menu:
+
+```bash
+vinted-refresh
+```
+
+Or use commands directly:
+
 ### 1. Log in once
 
 ```bash
@@ -53,11 +61,22 @@ The tool will:
 3. Publish a **new** listing at `/items/new`
 4. **Hide** the old listing (only after publish succeeds)
 
+### 3. List your listings
+
+```bash
+vinted-refresh list
+```
+
+Shows active listings from your account with id, price, title, and URL. Use `--all` to fetch every page, or `--json` for machine-readable output.
+
 ## Commands
 
 | Command | Description |
 |---------|-------------|
+| `vinted-refresh` | Interactive menu (default in a terminal) |
+| `vinted-refresh interactive [--url <base-url>]` | Same interactive menu |
 | `vinted-refresh login [--url <base-url>]` | Save a browser session after manual login |
+| `vinted-refresh list [options]` | List active listings in your account |
 | `vinted-refresh refresh <item-url> [options]` | Re-upload a listing and hide the original |
 
 ### Options
@@ -65,6 +84,12 @@ The tool will:
 | Flag | Description |
 |------|-------------|
 | `--url <base-url>` | Vinted domain for login (default: `https://www.vinted.it`) |
+| `--page <n>` | Page number for `list` (default: 1) |
+| `--per-page <n>` | Items per page for `list` (default: 20, max: 96) |
+| `--all` | Fetch all pages when listing |
+| `--include-hidden` | Include hidden listings in `list` output |
+| `--include-sold` | Include sold/closed listings in `list` output |
+| `--json` | Print `list` output as JSON |
 | `--dry-run` | Extract fields and download photos only — no publish |
 | `--keep-old` | Publish the new copy but leave the old listing visible |
 | `--headless` | Run without a visible browser (less reliable with anti-bot) |
@@ -72,7 +97,9 @@ The tool will:
 ### npm scripts
 
 ```bash
+npm run start
 npm run login
+npm run list
 npm run refresh -- "https://www.vinted.it/items/123456789-your-item"
 ```
 
@@ -136,6 +163,10 @@ src/
   publish.js            Fill upload form and submit
   hide.js               Hide old listing via UI
   refresh.js            Orchestrates the full flow
+  list.js               List account listings via wardrobe API
+  interactive.js      Menu-driven interactive CLI
+  prompt.js             Terminal prompts for interactive mode
+  session.js            Read user id from saved session
   url.js                Parse item ID and domain from URL
 ```
 

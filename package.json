@@ -8,6 +8,8 @@
   },
   "scripts": {
     "login": "node bin/vinted-refresh.js login",
+    "start": "node bin/vinted-refresh.js",
+    "list": "node bin/vinted-refresh.js list",
     "refresh": "node bin/vinted-refresh.js refresh",
     "postinstall": "playwright install chromium"
   },
