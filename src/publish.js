@@ -35,8 +35,9 @@ export async function publishListing(page, baseUrl, fields, imagePaths, onProgre
         try {
           await page.waitForFunction(
             (count) =>
-              document.querySelectorAll('#photos [data-testid^="image-wrapper-"], #photos img[src]')
-                .length >= count,
+              document.querySelectorAll(
+                '[data-testid^="media-select-photo-"][data-testid$="--img"], #photos [data-testid^="image-wrapper-"], #photos img[src]'
+              ).length >= count,
             expected,
             { timeout: 12000 }
           );
@@ -56,11 +57,11 @@ export async function publishListing(page, baseUrl, fields, imagePaths, onProgre
 
   onProgress('Filling title and description...');
   if (fields.title) {
-    await reactFill(page, '#title', fields.title);
+    await reactFill(page, '[data-testid="title--input"], #title', fields.title);
     await pause(page, 900, 1600);
   }
   if (fields.description) {
-    await reactFill(page, '#description', fields.description);
+    await reactFill(page, '[data-testid="description--input"], #description', fields.description);
     await pause(page, 900, 1600);
   }
 
@@ -93,7 +94,9 @@ async function reactFill(page, selector, value) {
 async function fillPrice(page, price) {
   if (!price) return;
   const priceStr = String(price).replace(',', '.');
-  const priceInput = page.locator('#price, [data-testid="price-input"] input').first();
+  const priceInput = page
+    .locator('[data-testid="price-input--input"], #price, [data-testid="price-input"] input')
+    .first();
   await priceInput.waitFor({ state: 'attached', timeout: 10000 });
   await priceInput.click();
   await pause(page, 120, 300);
@@ -132,7 +135,7 @@ async function fillFormFields(page, fields, onProgress) {
     onProgress(`Setting category: ${fields.category}`);
     await fillCategoryField(page, fields.category, fields.categoryPath);
   } else {
-    const currentCategory = await page.locator('#category').inputValue().catch(() => '');
+    const currentCategory = await readCategoryValue(page);
     if (!currentCategory.trim()) {
       onProgress('Choosing first suggested category...');
       await chooseFirstSuggestedCategory(page);
@@ -193,8 +196,13 @@ async function fillFormFields(page, fields, onProgress) {
 
   if (fields.packageSizeId) {
     onProgress(`Setting parcel size...`);
-    const cell = page.locator(`#package-size-${fields.packageSizeId}`).first();
+    const cell = page
+      .locator(
+        `[data-testid="${fields.packageSizeId}-package-size--cell"], #package-size-${fields.packageSizeId}`
+      )
+      .first();
     if (await cell.count()) {
+      await cell.scrollIntoViewIfNeeded().catch(() => {});
       await cell.click();
       await pause(page, 900, 1600);
     }
@@ -229,17 +237,62 @@ async function readFieldValue(page, selector) {
   return page.locator(selector).first().inputValue().catch(() => '');
 }
 
+// New Vinted form: dropdown buttons show the selected value in a `X--value`
+// span, with a "Seleziona…" placeholder when unset.
+async function readDropdownValue(page, valueTestId) {
+  const text = await page
+    .locator(`[data-testid="${valueTestId}"]`)
+    .first()
+    .textContent()
+    .then((t) => (t || '').trim())
+    .catch(() => '');
+  if (/^(seleziona|select|sélection|wähle|choisis)/i.test(text)) return '';
+  return text;
+}
+
+async function readCategoryValue(page) {
+  const newValue = await readDropdownValue(page, 'catalog-select-dropdown-input--value');
+  if (newValue) return newValue;
+  return readFieldValue(page, '#category');
+}
+
+async function readConditionValue(page) {
+  const newValue = await readDropdownValue(page, 'category-condition-single-list-input--value');
+  if (newValue) return newValue;
+  return readFieldValue(page, '#condition');
+}
+
 async function closeOpenDialogs(page) {
+  await dismissEducationModal(page);
   await page.keyboard.press('Escape').catch(() => {});
   await pause(page, 200, 400);
   await page.keyboard.press('Escape').catch(() => {});
   await pause(page, 200, 400);
 }
 
+// Picking some options (e.g. condition "Nuovo senza cartellino") opens an
+// education modal whose overlay swallows every click until dismissed.
+async function dismissEducationModal(page) {
+  const modal = page.locator('[data-testid*="education-modal"]:not([data-testid$="--overlay"])').first();
+  if (!(await modal.isVisible().catch(() => false))) return;
+
+  const button = page
+    .locator('.web_ui__Dialog__portal button')
+    .last();
+  if (await button.isVisible().catch(() => false)) {
+    await button.click({ timeout: 5000 }).catch(() => {});
+  } else {
+    await page.keyboard.press('Escape').catch(() => {});
+  }
+  await pause(page, 400, 700);
+}
+
 async function fillConditionField(page, condition, conditionTestId) {
   await closeOpenDialogs(page);
 
-  const input = page.locator('#condition').first();
+  const input = page
+    .locator('[data-testid="category-condition-single-list-input"], #condition')
+    .first();
   await input.scrollIntoViewIfNeeded().catch(() => {});
   await input.click();
   await pause(page, 500, 900);
@@ -257,16 +310,31 @@ async function fillConditionField(page, condition, conditionTestId) {
 
   if (conditionTestId) {
     const cell = page.locator(`[data-testid="${conditionTestId}"]`).first();
-    await cell.click();
-    await pause(page, 400, 700);
-    if ((await readFieldValue(page, '#condition')).trim()) return;
+    if (await cell.count()) {
+      await cell.click();
+      await pause(page, 400, 700);
+      await dismissEducationModal(page);
+      if ((await readConditionValue(page)).trim()) return;
+    }
   }
 
-  const exact = page.locator('[data-testid^="condition-"]').filter({ hasText: condition }).first();
+  const exact = page
+    .locator('[data-testid^="condition-"][data-testid$="--title"]')
+    .filter({ hasText: condition })
+    .first();
   if (await exact.count()) {
     await exact.click();
     await pause(page, 400, 700);
-    if ((await readFieldValue(page, '#condition')).trim()) return;
+    await dismissEducationModal(page);
+    if ((await readConditionValue(page)).trim()) return;
+  }
+
+  const anyMatch = page.locator('[data-testid^="condition-"]').filter({ hasText: condition }).first();
+  if (await anyMatch.count()) {
+    await anyMatch.click();
+    await pause(page, 400, 700);
+    await dismissEducationModal(page);
+    if ((await readConditionValue(page)).trim()) return;
   }
 
   const firstWord = condition.split(/\s+/)[0];
@@ -274,11 +342,12 @@ async function fillConditionField(page, condition, conditionTestId) {
   if (await partial.count()) {
     await partial.click();
     await pause(page, 400, 700);
+    await dismissEducationModal(page);
   }
 
   await page.keyboard.press('Escape').catch(() => {});
 
-  if (!(await readFieldValue(page, '#condition')).trim()) {
+  if (!(await readConditionValue(page)).trim()) {
     throw new Error(`Failed to set Condizioni to "${condition}"`);
   }
 }
@@ -355,36 +424,53 @@ async function pickDropdownOption(page, inputSelector, cellSelector, target, opt
   return true;
 }
 
+const ISBN_INPUT = '[data-testid="isbn--input"], input[name="isbn"], #isbn';
+const BOOK_TITLE_INPUT = '[data-testid="book_title--input"], input[name="book_title"], #book_title';
+const BOOK_AUTHOR_INPUT = '[data-testid="author--input"], input[name="author"], #author';
+
 async function fillBookFields(page, fields, onProgress) {
   if (!fields.isbn) return;
 
-  const isbnInput = page.locator('#isbn').first();
+  const isbnInput = page.locator(ISBN_INPUT).first();
   if (!(await isbnInput.count())) return;
 
   onProgress(`Setting ISBN: ${fields.isbn}`);
-  await reactFill(page, '#isbn', normalizeIsbn(fields.isbn));
+  await reactFill(page, ISBN_INPUT, normalizeIsbn(fields.isbn));
   await pause(page, 2000, 3500);
 
   try {
     await page.waitForFunction(
-      () => {
-        const title = document.querySelector('#book_title');
+      (selector) => {
+        const title = document.querySelector(selector);
         return title instanceof HTMLInputElement && title.value.trim().length > 0;
       },
+      BOOK_TITLE_INPUT,
       { timeout: 8000 }
     );
   } catch {
     if (fields.bookTitle) {
       onProgress(`Setting book title: ${fields.bookTitle}`);
-      await reactFill(page, '#book_title', fields.bookTitle);
+      await reactFill(page, BOOK_TITLE_INPUT, fields.bookTitle);
+      await pause(page, 900, 1600);
+    }
+    if (fields.bookAuthor && !(await readFieldValue(page, BOOK_AUTHOR_INPUT)).trim()) {
+      onProgress(`Setting book author: ${fields.bookAuthor}`);
+      await reactFill(page, BOOK_AUTHOR_INPUT, fields.bookAuthor);
       await pause(page, 900, 1600);
     }
   }
 
-  const currentLanguage = await readFieldValue(page, '#language_book');
+  const currentLanguage =
+    (await readFieldValue(page, '#language_book')) ||
+    (await readDropdownValue(page, 'isbn-language_book-single-list_search-input'));
   if (fields.bookLanguage && normText(currentLanguage) !== normText(fields.bookLanguage)) {
     onProgress(`Setting book language: ${fields.bookLanguage}`);
-    await pickDropdownOption(page, '#language_book', '.web_ui__Cell__cell', fields.bookLanguage);
+    await pickDropdownOption(
+      page,
+      '[data-testid="isbn-language_book-single-list_search-input"], #language_book',
+      '.web_ui__Cell__cell',
+      fields.bookLanguage
+    );
     await pause(page, 900, 1600);
   }
 }
@@ -394,6 +480,12 @@ function normalizeIsbn(value) {
 }
 
 async function fillCategoryField(page, category, categoryPath = '') {
+  const newDropdown = page.locator('[data-testid="catalog-select-dropdown-input"]').first();
+  if (await newDropdown.count()) {
+    await fillCategoryDropdown(page, newDropdown, category, categoryPath);
+    return;
+  }
+
   const categoryInput = page.locator('#category').first();
   await categoryInput.click();
   await pause(page, 400, 800);
@@ -467,7 +559,96 @@ async function fillCategoryField(page, category, categoryPath = '') {
   await pause(page, 300, 500);
 }
 
+// New Vinted form: the category picker is a dropdown listing suggestion rows
+// (leaf name + full path) on top, then the root categories to navigate.
+async function fillCategoryDropdown(page, trigger, category, categoryPath = '') {
+  await closeOpenDialogs(page);
+  await trigger.scrollIntoViewIfNeeded().catch(() => {});
+  await trigger.click();
+
+  const content = page.locator('[data-testid="catalog-select-dropdown-content"]').first();
+  await content.waitFor({ state: 'visible', timeout: 8000 });
+  await pause(page, 700, 1200);
+
+  const leaf = normText(category);
+  const verify = async () => normText(await readCategoryValue(page)) === leaf;
+
+  const clickRowMatching = async (target) => {
+    const rows = content.locator('li');
+    const count = await rows.count();
+    let bestIndex = -1;
+    let bestScore = -1;
+    for (let i = 0; i < count; i++) {
+      const text = normText(await rows.nth(i).textContent());
+      if (!text) continue;
+      let score = -1;
+      if (text === target) score = 100;
+      else if (text.startsWith(target)) score = 80;
+      else if (text.includes(target)) score = 50;
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = i;
+      }
+      if (score === 100) break;
+    }
+    if (bestIndex < 0 || bestScore < 50) return false;
+    await content.locator('li').nth(bestIndex).click();
+    await pause(page, 800, 1400);
+    return true;
+  };
+
+  // 1) suggestion row matching the leaf name selects the category directly
+  if (await clickRowMatching(leaf)) {
+    if (await verify()) return;
+  }
+
+  // 2) walk the category tree following the breadcrumb path
+  const segments = categoryPath
+    ? categoryPath
+        .split(/>|›/)
+        .map((part) => normText(part))
+        .filter(Boolean)
+    : [];
+  if (segments.length && (await content.isVisible().catch(() => false))) {
+    for (const segment of segments) {
+      if (!(await content.isVisible().catch(() => false))) break;
+      const clicked = await clickRowMatching(segment);
+      if (!clicked) break;
+    }
+    if (await verify()) return;
+  }
+
+  await page.keyboard.press('Escape').catch(() => {});
+  await pause(page, 300, 500);
+
+  if (!(await readCategoryValue(page)).trim()) {
+    throw new Error(`Failed to set category to "${category}"`);
+  }
+}
+
 async function chooseFirstSuggestedCategory(page) {
+  const newDropdown = page.locator('[data-testid="catalog-select-dropdown-input"]').first();
+  if (await newDropdown.count()) {
+    await newDropdown.click();
+    const content = page.locator('[data-testid="catalog-select-dropdown-content"]').first();
+    try {
+      await content.waitFor({ state: 'visible', timeout: 8000 });
+    } catch {
+      return;
+    }
+    await pause(page, 700, 1200);
+    // keep clicking the first row until the dropdown closes (leaf reached)
+    for (let depth = 0; depth < 6; depth++) {
+      if (!(await content.isVisible().catch(() => false))) break;
+      const first = content.locator('li').first();
+      if (!(await first.count())) break;
+      await first.click();
+      await pause(page, 800, 1400);
+    }
+    await page.keyboard.press('Escape').catch(() => {});
+    return;
+  }
+
   const categoryInput = page.locator('#category').first();
   await categoryInput.click();
   await pause(page, 600, 1000);
@@ -483,6 +664,47 @@ async function chooseFirstSuggestedCategory(page) {
 }
 
 async function fillBrandField(page, brand) {
+  const newDropdown = page.locator('[data-testid="brand-select-dropdown-input"]').first();
+  if (await newDropdown.count()) {
+    await closeOpenDialogs(page);
+    await newDropdown.scrollIntoViewIfNeeded().catch(() => {});
+    await newDropdown.click();
+
+    const content = page.locator('[data-testid="brand-select-dropdown-content"]').first();
+    await content.waitFor({ state: 'visible', timeout: 8000 });
+    await pause(page, 500, 900);
+
+    const search = page.locator('[data-testid="brand-search--input"]').first();
+    if (await search.count()) {
+      await search.click();
+      await page.keyboard.press(selectAllKey());
+      await page.keyboard.insertText(String(brand));
+      await pause(page, 1200, 1800);
+    }
+
+    const target = normText(brand);
+    const rows = content.locator('li, .web_ui__Cell__cell, [role="button"]');
+    const count = await rows.count();
+    for (let i = 0; i < count; i++) {
+      const text = normText(await rows.nth(i).textContent());
+      if (text === target || text.startsWith(target)) {
+        await rows.nth(i).click();
+        await pause(page, 500, 900);
+        return;
+      }
+    }
+
+    // fall back to the first row (usually "use <brand>" / closest match)
+    if (count > 0) {
+      await rows.first().click();
+      await pause(page, 500, 900);
+      return;
+    }
+
+    await page.keyboard.press('Escape').catch(() => {});
+    return;
+  }
+
   const brandInput = page.locator('#brand').first();
   await brandInput.click();
   await pause(page, 600, 1100);
@@ -565,7 +787,20 @@ async function submitListing(page) {
       ),
     ]);
   } catch {
-    throw new Error('Publish did not complete — check the browser for validation errors or captcha');
+    const errors = await page
+      .evaluate(() => {
+        const texts = Array.from(
+          document.querySelectorAll(
+            '[data-testid$="--error"], [data-testid$="-error"], .web_ui__InputError__error, [aria-invalid="true"] ~ *, [class*="error" i]'
+          )
+        )
+          .map((el) => (el.textContent || '').trim())
+          .filter((t) => t && t.length < 200);
+        return [...new Set(texts)].slice(0, 10);
+      })
+      .catch(() => []);
+    const detail = errors.length ? ` Validation: ${errors.join(' | ')}` : '';
+    throw new Error(`Publish did not complete — check the browser for validation errors or captcha.${detail}`);
   }
 
   return page.url();

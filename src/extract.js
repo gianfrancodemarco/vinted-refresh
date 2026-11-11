@@ -72,43 +72,82 @@ export async function extractItemFields(page, itemUrl) {
 
   await page.waitForFunction(
     () => {
-      const title = document.querySelector('#title');
+      const title = document.querySelector('[data-testid="title--input"], #title');
       return title instanceof HTMLInputElement && title.value.length > 0;
     },
-    { timeout: 15000 }
+    null,
+    { timeout: 20000 }
   );
 
   const fields = await page.evaluate(() => {
-    const val = (sel) => document.querySelector(sel)?.value || '';
-    const rawPrice = val('#price') || val('[data-testid="price-input"] input');
+    const val = (...sels) => {
+      for (const sel of sels) {
+        const el = document.querySelector(sel);
+        if (el && typeof el.value === 'string' && el.value) return el.value;
+      }
+      return '';
+    };
+    // New Vinted form: selected dropdown values live in `[data-testid="X--value"]`
+    // spans; when unset they show a "Seleziona…" placeholder.
+    const dropdownText = (...sels) => {
+      for (const sel of sels) {
+        const text = document.querySelector(sel)?.textContent?.trim() || '';
+        if (text && !/^(seleziona|select|sélection|wähle|choisis)/i.test(text)) return text;
+      }
+      return '';
+    };
+
+    const rawPrice = val('[data-testid="price-input--input"]', '#price', '[data-testid="price-input"] input');
     const price = rawPrice.replace(/[^\d,.]/g, '').replace(',', '.');
 
     const photoUrls = Array.from(
-      document.querySelectorAll('#photos [data-testid^="image-wrapper-"] img, #photos img')
+      document.querySelectorAll(
+        '[data-testid^="media-select-photo-"] img, #photos [data-testid^="image-wrapper-"] img, #photos img'
+      )
     )
       .map((img) => img.getAttribute('src'))
       .filter((src) => src && !src.startsWith('data:'));
 
-    const checkedRadio = document.querySelector('#package_size input[type="radio"]:checked');
     let packageSizeId = '';
+    const checkedRadio = document.querySelector(
+      'input[data-testid^="package_type_selector_"]:checked, #package_size input[type="radio"]:checked'
+    );
     if (checkedRadio instanceof HTMLInputElement) {
-      const match = checkedRadio.id.match(/_(\d+)$/);
+      const testid = checkedRadio.getAttribute('data-testid') || '';
+      const match = testid.match(/package_type_selector_(\d+)/) || checkedRadio.id.match(/_(\d+)$/);
       packageSizeId = match ? match[1] : '';
     }
 
     return {
-      title: val('#title'),
-      description: val('#description'),
-      brand: val('#brand'),
-      size: val('#size'),
-      color: val('#color'),
-      condition: val('#condition'),
-      category: val('#category'),
-      videoGamePlatform: val('#video_game_platform'),
-      videoGameRating: val('#video_game_ratings'),
-      isbn: val('#isbn'),
-      bookTitle: val('#book_title'),
-      bookLanguage: val('#language_book'),
+      title: val('[data-testid="title--input"]', '#title'),
+      description: val('[data-testid="description--input"]', '#description'),
+      brand:
+        val('#brand') ||
+        dropdownText('[data-testid="brand-select-dropdown-input--value"]'),
+      size:
+        val('#size') ||
+        dropdownText('[data-testid="size-select-dropdown-input--value"]'),
+      color:
+        val('#color') ||
+        dropdownText('[data-testid="color-select-dropdown-input--value"]'),
+      condition:
+        val('#condition') ||
+        dropdownText('[data-testid="category-condition-single-list-input--value"]'),
+      category:
+        val('#category') ||
+        dropdownText('[data-testid="catalog-select-dropdown-input--value"]'),
+      videoGamePlatform:
+        val('#video_game_platform') ||
+        dropdownText('[data-testid="video-game-platform-select-dropdown-input--value"]'),
+      videoGameRating:
+        val('#video_game_ratings') ||
+        dropdownText('[data-testid="video-game-rating-select-dropdown-input--value"]'),
+      isbn: val('#isbn', '[data-testid="isbn--input"]'),
+      bookTitle: val('#book_title', '[data-testid="book_title--input"]'),
+      bookAuthor: val('#author', '[data-testid="author--input"]'),
+      bookLanguage:
+        val('#language_book') ||
+        dropdownText('[data-testid="isbn-language_book-single-list_search-input"]'),
       price,
       photoUrls,
       packageSizeId,
@@ -128,7 +167,9 @@ export async function extractItemFields(page, itemUrl) {
 async function extractConditionTestId(page, conditionLabel) {
   if (!conditionLabel) return '';
 
-  const input = page.locator('#condition').first();
+  const input = page
+    .locator('[data-testid="category-condition-single-list-input"], #condition')
+    .first();
   if (!(await input.count())) return '';
 
   await input.scrollIntoViewIfNeeded().catch(() => {});
@@ -140,6 +181,18 @@ async function extractConditionTestId(page, conditionLabel) {
   } catch {
     await page.keyboard.press('Escape').catch(() => {});
     return '';
+  }
+
+  // New form marks the current condition with a checked radio.
+  const checkedId = await page.evaluate(() => {
+    const radio = document.querySelector('input[data-testid^="condition-radio-"]:checked');
+    const match = radio?.getAttribute('data-testid')?.match(/^condition-radio-(\d+)/);
+    return match ? `condition-${match[1]}` : '';
+  });
+  if (checkedId) {
+    await page.keyboard.press('Escape').catch(() => {});
+    await pause(page, 300, 500);
+    return checkedId;
   }
 
   const testId = await page.evaluate((label) => {
