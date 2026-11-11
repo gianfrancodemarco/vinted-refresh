@@ -147,42 +147,47 @@ export async function runInteractive(options = {}) {
 
   try {
     while (true) {
-      const choices = [
-        ...(storageStateExists()
-          ? [
-              { label: 'List my listings', value: 'list' },
-              { label: 'Refresh by URL', value: 'refresh-url' },
-            ]
-          : []),
-        { label: 'Login', value: 'login' },
-        { label: 'Quit', value: 'quit' },
-      ];
+      try {
+        const choices = [
+          ...(storageStateExists()
+            ? [
+                { label: 'List my listings', value: 'list' },
+                { label: 'Refresh by URL', value: 'refresh-url' },
+              ]
+            : []),
+          { label: 'Login', value: 'login' },
+          { label: 'Quit', value: 'quit' },
+        ];
 
-      const choice = await prompt.choose('Main menu', choices);
+        const choice = await prompt.choose('Main menu', choices);
 
-      if (choice.value === 'quit') {
-        console.log('Bye.');
-        break;
-      }
+        if (choice.value === 'quit') {
+          console.log('Bye.');
+          break;
+        }
 
-      if (choice.value === 'login') {
-        await runLogin(baseUrl, prompt);
-        printSessionStatus();
-        continue;
-      }
+        if (choice.value === 'login') {
+          await runLogin(baseUrl, prompt);
+          printSessionStatus();
+          continue;
+        }
 
-      if (!storageStateExists()) {
-        console.log('\nNo saved session. Choose Login first.\n');
-        continue;
-      }
+        if (!storageStateExists()) {
+          console.log('\nNo saved session. Choose Login first.\n');
+          continue;
+        }
 
-      if (choice.value === 'list') {
-        await browseListings(baseUrl, prompt);
-        continue;
-      }
+        if (choice.value === 'list') {
+          await browseListings(baseUrl, prompt);
+          continue;
+        }
 
-      if (choice.value === 'refresh-url') {
-        await refreshByUrl(baseUrl, prompt);
+        if (choice.value === 'refresh-url') {
+          await refreshByUrl(baseUrl, prompt);
+        }
+      } catch (err) {
+        console.error(`\nError: ${err.message}`);
+        await prompt.ask('\nPress Enter to continue...');
       }
     }
   } finally {

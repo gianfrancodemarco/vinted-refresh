@@ -3,3 +3,4 @@ node_modules/
 session-profile/
 *.log
 .DS_Store
+downloads/

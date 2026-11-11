@@ -4,8 +4,10 @@ import { pause } from './browser.js';
 
 const EDIT_SELECTORS = [
   '[data-testid="item-edit-button"]',
+  'button:has-text("Modifica annuncio")',
   'button:has-text("Modifier l\'annonce")',
   'button:has-text("Edit listing")',
+  'a:has-text("Modifica annuncio")',
   'a:has-text("Modifier l\'annonce")',
   'a:has-text("Edit listing")',
 ];
@@ -40,7 +42,30 @@ export async function extractItemFields(page, itemUrl) {
   });
 
   const editBtn = page.locator(EDIT_SELECTORS.join(', ')).first();
-  await editBtn.waitFor({ state: 'attached', timeout: 15000 });
+  try {
+    await editBtn.waitFor({ state: 'attached', timeout: 15000 });
+  } catch {
+    const pageState = await page.evaluate(() => ({
+      hasBuyButton: !!document.querySelector('[data-testid="item-buy-button"]'),
+      hasEditButton: !!document.querySelector('[data-testid="item-edit-button"]'),
+      uploadHref: document.querySelector('[data-testid="header-upload-item-button"]')?.getAttribute('href') || '',
+    }));
+
+    if (pageState.hasBuyButton && !pageState.hasEditButton) {
+      if (pageState.uploadHref.includes('signup') || pageState.uploadHref.includes('register')) {
+        throw new Error(
+          'Session expired or invalid for the web UI. Run `vinted-refresh login` and try again.'
+        );
+      }
+      throw new Error(
+        'Edit button not found — Vinted is showing the public buyer view. Log in as the listing owner, or check that this item is yours.'
+      );
+    }
+
+    throw new Error(
+      'Edit button not found on the item page. The listing may be sold/removed, or you may not be logged in as the owner.'
+    );
+  }
   await editBtn.scrollIntoViewIfNeeded().catch(() => {});
   await editBtn.click({ timeout: 10000 });
   await pause(page, 1500, 2500);
